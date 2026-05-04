@@ -1,0 +1,68 @@
+{
+  "match": {
+    "home": "Arsenal",
+    "away": "Chelsea",
+    "date": "2026-05-10",
+    "venue": "Emirates Stadium"
+  },
+  "teams": {
+    "home": {
+      "name": "Arsenal",
+      "formation": "4-3-3",
+      "color": "#EF0107",
+      "coach": { "name": "Mikel Arteta" },
+      "starters": [
+        { "number": 1,  "name": "David Raya",       "position": "GK"  },
+        { "number": 2,  "name": "Ben White",         "position": "RB"  },
+        { "number": 6,  "name": "Gabriel Magalhães", "position": "CB"  },
+        { "number": 12, "name": "Jurriën Timber",    "position": "CB"  },
+        { "number": 35, "name": "Oleksandr Zinchenko","position": "LB" },
+        { "number": 29, "name": "Kai Havertz",       "position": "CM"  },
+        { "number": 8,  "name": "Martin Ødegaard",   "position": "CAM" },
+        { "number": 5,  "name": "Thomas Partey",     "position": "CDM" },
+        { "number": 7,  "name": "Bukayo Saka",       "position": "RW"  },
+        { "number": 11, "name": "Gabriel Martinelli", "position": "LW" },
+        { "number": 9,  "name": "Gabriel Jesus",     "position": "ST"  }
+      ],
+      "substitutes": [
+        { "number": 13, "name": "Karl Hein",         "position": "GK"  },
+        { "number": 4,  "name": "Ben Godfrey",       "position": "CB"  },
+        { "number": 17, "name": "Takehiro Tomiyasu", "position": "RB"  },
+        { "number": 20, "name": "Jorginho",          "position": "CM"  },
+        { "number": 41, "name": "Declan Rice",       "position": "CDM" },
+        { "number": 24, "name": "Reiss Nelson",      "position": "RW"  },
+        { "number": 10, "name": "Emile Smith Rowe",  "position": "CAM" },
+        { "number": 14, "name": "Eddie Nketiah",     "position": "ST"  }
+      ]
+    },
+    "away": {
+      "name": "Chelsea",
+      "formation": "4-2-3-1",
+      "color": "#034694",
+      "coach": { "name": "Enzo Maresca" },
+      "starters": [
+        { "number": 1,  "name": "Robert Sánchez",    "position": "GK"  },
+        { "number": 2,  "name": "Reece James",       "position": "RB"  },
+        { "number": 26, "name": "Trevoh Chalobah",   "position": "CB"  },
+        { "number": 5,  "name": "Benoît Badiashile", "position": "CB"  },
+        { "number": 3,  "name": "Marc Cucurella",    "position": "LB"  },
+        { "number": 8,  "name": "Moisés Caicedo",    "position": "CDM" },
+        { "number": 4,  "name": "Enzo Fernández",    "position": "CDM" },
+        { "number": 7,  "name": "Raheem Sterling",   "position": "RM"  },
+        { "number": 10, "name": "Cole Palmer",       "position": "CAM" },
+        { "number": 11, "name": "Noni Madueke",      "position": "LM"  },
+        { "number": 9,  "name": "Nicolas Jackson",   "position": "ST"  }
+      ],
+      "substitutes": [
+        { "number": 13, "name": "Djordje Petrovic",  "position": "GK"  },
+        { "number": 6,  "name": "Levi Colwill",      "position": "CB"  },
+        { "number": 21, "name": "Ben Chilwell",      "position": "LB"  },
+        { "number": 17, "name": "Carney Chukwuemeka","position": "CM"  },
+        { "number": 19, "name": "Conor Gallagher",   "position": "CM"  },
+        { "number": 20, "name": "Ian Maatsen",       "position": "LM"  },
+        { "number": 16, "name": "Mykhailo Mudryk",   "position": "LW"  },
+        { "number": 18, "name": "Armando Broja",     "position": "ST"  }
+      ]
+    }
+  }
+}
