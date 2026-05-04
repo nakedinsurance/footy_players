@@ -1,0 +1,94 @@
+name: Spec Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  spec-review:
+    name: Review PR against PRD.md
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Cursor CLI
+        run: |
+          # Install the Cursor CLI — requires CURSOR_API_KEY secret to be set in repo settings.
+          # Cursor CLI docs: https://docs.cursor.com/cli
+          curl -fsSL https://cursor.sh/install-cli.sh | sh
+          echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
+
+      - name: Run spec-review skill
+        id: review
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          cursor agent run \
+            --skill .cursor/skills/spec-review.md \
+            --output both \
+            -- \
+            --spec PRD.md \
+            --branch "${{ github.head_ref }}" \
+            --base "${{ github.base_ref }}" \
+            > review-output.txt 2>&1
+
+          # Extract exit code from JSON contract (exit_code: 0=SHIP, 1=NEEDS_WORK, 2=BLOCKED)
+          EXIT_CODE=$(grep -o '"exit_code":[[:space:]]*[0-9]' review-output.txt | grep -o '[0-9]$' || echo "1")
+          VERDICT=$(grep -o '"verdict":[[:space:]]*"[^"]*"' review-output.txt | head -1 | grep -o '"[^"]*"$' | tr -d '"' || echo "UNKNOWN")
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "verdict=$VERDICT"     >> "$GITHUB_OUTPUT"
+
+          # Don't fail the step here — we post the comment first, then set exit code
+          exit 0
+
+      - name: Post review comment on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs   = require('fs');
+            const raw  = fs.readFileSync('review-output.txt', 'utf8');
+            const verdict = '${{ steps.review.outputs.verdict }}';
+
+            const icon = verdict === 'SHIP'       ? '✅'
+                       : verdict === 'NEEDS_WORK' ? '⚠️'
+                       : verdict === 'BLOCKED'    ? '🚫'
+                       : 'ℹ️';
+
+            const body = [
+              `## ${icon} Spec Review — \`${verdict}\``,
+              '',
+              '<details>',
+              '<summary>Full report</summary>',
+              '',
+              '```',
+              raw.trim(),
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              body,
+            });
+
+      - name: Enforce gate
+        # Fail the job if verdict is BLOCKED (exit_code 2).
+        # NEEDS_WORK (exit_code 1) posts a warning but does not block merge —
+        # change the condition to `!= '0'` to also block on NEEDS_WORK.
+        if: steps.review.outputs.exit_code == '2'
+        run: |
+          echo "Spec review returned BLOCKED. Fix the pre-merge blockers before merging."
+          exit 2
