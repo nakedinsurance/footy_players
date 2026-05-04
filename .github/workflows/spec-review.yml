@@ -21,23 +21,31 @@ jobs:
 
       - name: Install Cursor CLI
         run: |
-          # Install the Cursor CLI — requires CURSOR_API_KEY secret to be set in repo settings.
-          # Cursor CLI docs: https://docs.cursor.com/cli
-          curl -fsSL https://cursor.sh/install-cli.sh | sh
-          echo "$HOME/.cursor/bin" >> "$GITHUB_PATH"
+          # Install Cursor Agent CLI — requires CURSOR_API_KEY secret in repo settings.
+          # Docs: https://cursor.com/docs/cli/installation · https://cursor.com/docs/cli/github-actions
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v agent
+          agent --version
 
       - name: Run spec-review skill
         id: review
         env:
           CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
         run: |
-          cursor agent run \
-            --skill .cursor/skills/spec-review.md \
-            --output both \
-            -- \
-            --spec PRD.md \
-            --branch "${{ github.head_ref }}" \
-            --base "${{ github.base_ref }}" \
+          export PATH="$HOME/.local/bin:$PATH"
+          # The CLI binary is `agent` (not `cursor`). There is no `agent run --skill`; pass skill args in the prompt.
+          agent -p --trust --mode ask --output-format text \
+            "Follow the spec-review skill at .cursor/skills/spec-review.md exactly.
+
+            --spec PRD.md
+            --branch ${{ github.head_ref }}
+            --base ${{ github.base_ref }}
+            --output both
+
+            CI constraints: read the repo and run non-destructive git commands only; do not modify tracked files.
+            Output: emit the JSON verdict contract object FIRST (single JSON with verdict and exit_code), then the human report per the skill." \
             > review-output.txt 2>&1
 
           # Extract exit code from JSON contract (exit_code: 0=SHIP, 1=NEEDS_WORK, 2=BLOCKED)
