@@ -1,0 +1,7 @@
+interface:
+  display_name: "Test Confidence Review"
+  short_description: "Assess validation evidence for code changes"
+  default_prompt: "Use $test-confidence-review to assess whether the tests around my current change provide enough validation evidence for PR creation."
+
+policy:
+  allow_implicit_invocation: true

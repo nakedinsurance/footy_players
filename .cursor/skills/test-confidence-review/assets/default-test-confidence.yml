@@ -1,0 +1,22 @@
+validation:
+  commandTemplates:
+    - name: pnpm nx test project
+      command: pnpm exec nx test {project}
+      when: single-project
+
+# Optional, opt-in evidence. These commands are only considered when the script
+# is run with --with-coverage.
+coverage:
+  commandTemplates: []
+
+ignore:
+  paths:
+    - apps/infrastructure
+    - node_modules/**
+    - dist/**
+    - build/**
+    - coverage/**
+    - .next/**
+    - .nx/**
+    - .turbo/**
+    - "**/*.snap"

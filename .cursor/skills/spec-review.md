@@ -33,6 +33,8 @@ Parse these arguments from the user message:
 | `--focus <area>` | Narrow review to a domain (e.g. "auth", "payments") | No |
 | `--output <fmt>` | `human` (default), `json`, or `both` | No |
 | `--gate <stage>` | `pre-open`, `pre-merge`, or `all` (default) | No |
+| `--test-confidence <path>` | Path to `test-confidence-review` JSON artifact | No |
+| `--test-confidence-review <path>` | Path to qualitative `test-confidence-review` agent report | No |
 
 If `--spec` is missing, ask: "Which spec file should I review against? Provide the path."
 
@@ -55,6 +57,7 @@ This skill is a **consistency checker** — does the code match the spec, are th
 |--------|-------|-----------------------|
 | Test pass/fail | Test runner | Do not assert. Read from CI report if attached. |
 | Coverage % (line/branch) | Coverage tool | Do not score. May reference the number if provided. |
+| Test confidence | `test-confidence-review` | Consume JSON artifact. Do not recalculate. |
 | Build success | CI build step | Do not assert. |
 | Type errors | Type checker | Do not flag. |
 | Lint errors | Linter | Do not flag. |
@@ -65,6 +68,8 @@ This skill is a **consistency checker** — does the code match the spec, are th
 | Intent gap | **This skill** | Owned. |
 
 **Hard rule for Agent C (Quality):** must not produce a coverage percentage or a "X% of new lines tested" finding. May flag a missing test ONLY when tied to a specific spec AC. Coverage tooling owns coverage.
+
+**Hard rule for validation evidence:** when a `test-confidence-review` JSON artifact is provided, it is the authoritative validation signal for the test-confidence checkbox. Spec-review may use it to inform the final verdict, but must not rerun or reinterpret tests, coverage, or Codecov output.
 
 ---
 
@@ -79,6 +84,38 @@ This skill is a **consistency checker** — does the code match the spec, are th
 ## Phase 1 — Parallel Intake
 
 Spawn (or execute sequentially) these four specialist agents simultaneously.
+
+---
+
+### Validation Intake: Test Confidence Artifact
+
+Before Phase 1 aggregation, read the `--test-confidence <path>` JSON artifact when provided.
+Also read `--test-confidence-review <path>` when provided; in CI, default to `test-confidence-agent-review.md` if that file exists in the repo root.
+In CI, default to `test-confidence-result.json` if that file exists in the repo root.
+
+The artifact contract is produced by `test-confidence-review` and has this stable shape:
+
+```json
+{
+  "skill_version": "1.0.0",
+  "outcome": "Pass",
+  "passed": true,
+  "score": 90,
+  "max_score": 100,
+  "threshold": 80,
+  "required_checks_passed": true,
+  "checks": [],
+  "validation": [],
+  "quality_tools": [],
+  "related_tests": {},
+  "change_summary": {},
+  "uncertainty": {},
+  "metadata": {}
+}
+```
+
+If the artifact is present but malformed, mark the test-confidence checkbox as unavailable. If the artifact is absent, proceed but record validation evidence as unavailable.
+Use the qualitative agent report to decide whether the checkbox is genuinely pass-worthy when the deterministic JSON passes but the tests appear shallow, implementation-mirroring, or coverage-gaming.
 
 ---
 
@@ -270,6 +307,8 @@ Apply rules in order. First match wins.
 | `overall_confidence < 60` | `NEEDS_WORK` |
 | Otherwise | `SHIP` |
 
+Then apply validation judgment: if the test-confidence checkbox failed or is unavailable, keep any existing `BLOCKED` verdict, otherwise prefer `NEEDS_WORK` over `SHIP` when the failed validation evidence materially reduces confidence in the implemented requirements. Do not create a separate blocker solely because this checkbox failed.
+
 `exit_code` mapping: `SHIP=0`, `NEEDS_WORK=1`, `BLOCKED=2`.
 
 ---
@@ -316,6 +355,20 @@ When `--output json` or `--output both`, emit this object FIRST, before any huma
     "reasons": []
   },
 
+  "validation": {
+    "test_confidence": {
+      "artifact": "test-confidence-result.json",
+      "available": true,
+      "passed": true,
+      "score": 90,
+      "threshold": 80,
+      "required_checks_passed": true,
+      "checkbox": "pass",
+      "failed_required_checks": [],
+      "summary": "Test confidence passed with meaningful related tests and validation evidence."
+    }
+  },
+
   "metadata": {
     "spec": "docs/auth-prd.md",
     "branch": "feat/otp-login",
@@ -331,6 +384,7 @@ When `--output json` or `--output both`, emit this object FIRST, before any huma
 - `verdict` and `exit_code` are always consistent.
 - `blockers` only contains items causing `BLOCKED` or `NEEDS_WORK`. Never advisory.
 - `pre_open_gates.blocked: true` ONLY when at least one item has `gate_stage: pre_open`.
+- `validation.test_confidence` is always present. Set `available: false` when no artifact is provided or found.
 - New optional fields may be added in minor versions. Existing fields never change shape within the same major version.
 
 **NOT part of the contract** (advisory, formatting may change):
@@ -379,6 +433,13 @@ Legend: ✅ Implemented  ⚠️ Partial  ❌ Missing  ⬜ Out of scope
 [MED]  `src/auth/otp.ts:112`   — hardcoded 300s expiry → extract to config constant
 [LOW]  `src/auth/handler.ts:44` — variable `d` obscures intent → rename to `otpDeliveryResult`
 
+## Validation Evidence
+**Test-confidence checkbox:** Pass · score 90/100 · required checks passed
+- Validation command: passed
+- Related tests: 2 primary · 2 meaningful
+- Optional tools: coverage passed
+- Remaining uncertainty: failure/error behavior and boundary behavior not clearly exercised
+
 ## Risk Signals
 [HIGH 🔴 pre-open] `src/auth/otp.ts:34`   — credential leaked to logs → redact before logging
 [HIGH 🔴]          `src/auth/otp.ts:34`   — OTP stored in localStorage, spec requires httpOnly cookie → move to server-side session
@@ -421,6 +482,8 @@ Replace example rows with actual findings.
 | `--focus` provided | Scope Agent B/C/D to that domain. Still parse full spec. Record in `metadata.focus`. |
 | Spec is a Jira/Linear/GitHub URL | Fetch issue content, treat body + comments as spec document. |
 | Diff contains a detected secret | Emit `gate_stage: pre_open` security HIGH risk. `pre_open_gates.blocked: true`. |
+| Test confidence artifact is present and failing | Mark the validation checkbox as failed. Prefer `NEEDS_WORK` over `SHIP` when that failure reduces confidence in implemented requirements. |
+| Test confidence artifact missing in CI | Proceed, set `validation.test_confidence.available: false`, mark the checkbox unavailable, and mention missing validation evidence in the human report. |
 | All Phase 1 agents fail to return parseable JSON | Abort with `error: agent output malformed`. Do not emit a fabricated verdict. |
 
 ---

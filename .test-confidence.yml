@@ -1,0 +1,15 @@
+validation:
+  commandTemplates:
+    - name: npm test
+      command: npm run test:run
+      when: single-project
+
+coverage:
+  commandTemplates:
+    - name: vitest coverage
+      command: npm run test:run -- --coverage
+      when: single-project
+
+include:
+  paths:
+    - src/**

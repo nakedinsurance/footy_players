@@ -29,6 +29,83 @@ jobs:
           command -v agent
           agent --version
 
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install optional skill tool dependencies
+        run: |
+          if [ -f .cursor/skills/test-confidence-review/package.json ]; then
+            npm install --prefix .cursor/skills/test-confidence-review --no-package-lock
+          fi
+
+          if [ -f .cursor/skills/test-confidence-review/requirements.txt ]; then
+            python -m pip install --upgrade pip
+            python -m pip install -r .cursor/skills/test-confidence-review/requirements.txt
+          fi
+
+      - name: Run test-confidence evidence
+        run: |
+          # CI mode: produce both the human markdown report and the JSON contract consumed by spec-review.
+          npm run test-confidence:ci -- \
+            --base origin/${{ github.base_ref }} \
+            --spec PRD.md
+
+      - name: Run test-confidence skill
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          agent -p --trust --mode ask --output-format text \
+            "Follow the test-confidence-review skill at .cursor/skills/test-confidence-review/SKILL.md.
+
+            Inputs:
+            --spec PRD.md
+            --base origin/${{ github.base_ref }}
+
+            Existing evidence files:
+            - test-confidence-result.json
+            - test-confidence-result.md
+            - coverage/ if present
+
+            Task:
+            - Read the existing evidence files, changed source, and related tests.
+            - Statically and intelligently assess whether the tests are valuable, meaningful, and tied to changed behavior.
+            - Explicitly call out tests that look shallow, implementation-mirroring, coverage-gaming, or added only for the sake of metrics.
+            - Explicitly call out meaningful edge cases, failure paths, boundary cases, and regression risks that appear untested.
+            - Do not judge whether the implementation satisfies the PRD; spec-review owns that.
+            - Do not modify tracked files or rerun broad commands. Use the existing evidence unless a narrow read-only inspection is needed.
+
+            Output a concise markdown report with these sections:
+            ## Test-confidence checkbox
+            Pass | Fail
+
+            ## Why
+            Short rationale.
+
+            ## Valuable tests
+            Which tests provide real confidence and why.
+
+            ## Weak or shallow tests
+            Which tests may be low-value or coverage-gaming.
+
+            ## Missed edge cases
+            Concrete missing edge/failure/regression cases.
+
+            ## Spec-review signal
+            One paragraph explaining how this checkbox should influence SHIP vs NEEDS_WORK." \
+            > test-confidence-agent-review.md 2>&1
+
+      - name: Upload review evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-evidence
+          path: |
+            test-confidence-result.md
+            test-confidence-result.json
+            test-confidence-agent-review.md
+            coverage/**
+
       - name: Run spec-review skill
         id: review
         env:
@@ -42,7 +119,18 @@ jobs:
             --spec PRD.md
             --branch ${{ github.head_ref }}
             --base ${{ github.base_ref }}
+            --test-confidence test-confidence-result.json
+            --test-confidence-review test-confidence-agent-review.md
             --output both
+
+            Test confidence evidence:
+            - Read test-confidence-result.json and test-confidence-result.md before producing the final verdict.
+            - Read test-confidence-agent-review.md as the qualitative test-confidence checkbox review.
+            - Treat test-confidence-result.json as the authoritative input for one validation checkbox in the overall PR review.
+            - Treat test-confidence-agent-review.md as the authoritative qualitative assessment of whether the tests are valuable or shallow.
+            - If test-confidence-result.json has passed=false, required_checks_passed=false, or the agent review checkbox is Fail, mark the test-confidence checkbox failed and use it as a confidence signal when choosing SHIP vs NEEDS_WORK.
+            - Do not create a separate blocker solely because the test-confidence checkbox failed.
+            - Do not recalculate coverage or test pass/fail yourself; reference the test-confidence artifact instead.
 
             CI constraints: read the repo and run non-destructive git commands only; do not modify tracked files.
             Output: emit the JSON verdict contract object FIRST (single JSON with verdict and exit_code), then the human report per the skill." \

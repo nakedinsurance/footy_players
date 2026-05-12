@@ -10,6 +10,10 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+coverage
+test-confidence-result.md
+test-confidence-result.json
+test-confidence-agent-review.md
 *.local
 
 # Editor directories and files
