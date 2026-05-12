@@ -69,7 +69,7 @@ Weighted checklist score is 10/100; required check failed: Related tests found, 
 - Boundary or edge-case behavior is not clearly exercised.
 - Regression-specific assertions are not clearly identified.
 - Validation execution is incomplete or unsuccessful; do not overclaim confidence from static inspection alone.
-- Mutation, coverage, and Codecov evidence are supporting signals only; they do not replace meaningful related tests.
+- Mental mutation thinking, coverage, and Codecov evidence are supporting signals only; they do not replace meaningful related tests.
 - Codecov upload/network operations are not run by default. Use generated local coverage artifacts or CI-provided Codecov results as evidence.
 - This workflow does not include runtime integration tracing or test-impact analysis.
 - This workflow may miss tests that exercise behavior indirectly through higher-level flows with unrelated file names or imports.

@@ -50,6 +50,8 @@ node .cursor/skills/test-confidence-review/scripts/test-confidence-review.mjs \
 
 Then run the agent against this skill, using `test-confidence-result.json`, `test-confidence-result.md`, and the changed tests as input. The agent review should explicitly assess whether the tests are meaningful or shallow, whether they merely satisfy coverage metrics, and which edge/failure/regression cases remain untested.
 
+The agent review must also apply the qualitative rubric and mental mutation thinking below. The deterministic JSON artifact remains the downstream contract; do not replace it with the qualitative rubric score.
+
 ### Local Offline Mode
 
 Use this mode as an optional developer pre-flight before opening or updating a PR. It should run without network access after dependencies are installed.
@@ -148,10 +150,55 @@ Before reporting `Pass`, combine these evidence types:
 - Change understanding: identify changed production, test, docs, config, and tooling files, plus the code areas the tests should exercise.
 - Executed validation: run a configured narrow repo-local validation command when a related project can be inferred, and capture pass/fail evidence.
 - Test meaning assessment: identify tests that exist, tests that ran, tests that appear relevant to the changed code, tests that appear meaningful, tests that are shallow or coverage-gaming, and changed behavior that remains unproven.
+- Qualitative review: when an agent review is requested, judge whether the tests would fail for plausible incorrect implementations, not just whether they execute changed lines.
 
 Passing tests are not enough. A test is meaningful only if it appears to challenge observable behavior of the changed code or a likely regression in a way that would catch a real mistake. Do not treat code coverage as proof of confidence; coverage is only a weak indicator.
 
 Coverage reports are supporting evidence. High line coverage can reduce uncertainty, but cannot make unrelated or shallow tests meaningful by itself.
+
+## Qualitative Agent Rubric
+
+Use this rubric for the agent-written `test-confidence-agent-review.md`. Do not add these category scores to the deterministic JSON contract.
+
+Score each category `0-5` and explain only the categories that materially affect the checkbox:
+
+- Behavioral relevance: tests validate the PR behavior or acceptance criteria, not just nearby code.
+- Assertion strength: assertions check specific observable outputs, side effects, errors, or invariants.
+- Failure sensitivity: tests would fail for common wrong implementations, not only catastrophic breakage.
+- Test oracle quality: expected values are clear, deterministic, and derived from requirements/domain behavior rather than copied from implementation internals.
+- Important cases covered: happy path plus the relevant edge, failure, boundary, or regression cases for this change.
+- Isolation and determinism: tests avoid uncontrolled network, time, randomness, global state, or order coupling.
+
+### Mental Mutation Thinking
+
+For each important test, mentally try at least three plausible broken implementations and ask whether the test would fail. Examples:
+
+- Return a constant value.
+- Ignore one input parameter.
+- Reverse a condition.
+- Remove validation.
+- Swallow an error.
+- Return a partial object.
+- Skip a side effect.
+- Use stale cached data.
+- Accept invalid input.
+
+If tests would still pass, lower the qualitative `Failure sensitivity`, `Assertion strength`, or `Test oracle quality` judgment and call out the gap.
+
+### Red Flags
+
+Flag these strongly when present:
+
+- Tests only assert that no exception is thrown.
+- Tests duplicate implementation logic instead of validating behavior.
+- Tests use snapshots without explaining what behavior the snapshot protects.
+- Tests assert mock calls but not user-visible or domain-visible behavior.
+- Tests cover the new code path but not the changed requirement.
+- Tests are overly coupled to internal implementation details.
+- Tests rely on real network calls, real time, random data, or shared global state without controls.
+- Tests pass even if the core logic is removed, inverted, or replaced with a constant.
+- Tests appear added only to satisfy coverage thresholds.
+- Test names claim behavior that assertions do not prove.
 
 ## Result Labels
 
@@ -297,7 +344,7 @@ Short explanation of the judgment.
 ## Optional quality tools
 
 - Coverage evidence requested or not requested
-- Mutation evidence requested or not requested
+- Mental mutation thinking belongs in the qualitative agent review, not optional tool execution
 - Local artifacts found, commands run, skipped, blocked, or missing
 
 ## Test meaning assessment
@@ -305,6 +352,13 @@ Short explanation of the judgment.
 - What the primary tests appear to validate
 - Whether they check meaningful behavior or mostly mirror implementation
 - Edge cases / failure cases / regression areas covered
+
+## Qualitative agent review
+
+- Rubric highlights: behavioral relevance, assertion strength, failure sensitivity, test oracle quality, important cases, isolation/determinism
+- Mental mutations tried and whether the tests would fail
+- Red flags found
+- Suggested PR comments, if concrete action is needed
 
 ## Gaps and uncertainty
 

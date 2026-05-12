@@ -70,7 +70,10 @@ jobs:
             Task:
             - Read the existing evidence files, changed source, and related tests.
             - Statically and intelligently assess whether the tests are valuable, meaningful, and tied to changed behavior.
+            - Apply the qualitative rubric from the skill: behavioral relevance, assertion strength, failure sensitivity, test oracle quality, important cases covered, and isolation/determinism.
+            - Use mental mutation thinking: try at least three plausible broken implementations in your reasoning and decide whether the tests would fail.
             - Explicitly call out tests that look shallow, implementation-mirroring, coverage-gaming, or added only for the sake of metrics.
+            - Explicitly call out red flags: no-throw-only assertions, implementation-duplicating expectations, unexplained snapshots, mock-call-only tests, requirement-mismatched tests, brittle internals coupling, uncontrolled time/network/random/global state, or test names that overclaim.
             - Explicitly call out meaningful edge cases, failure paths, boundary cases, and regression risks that appear untested.
             - Do not judge whether the implementation satisfies the PRD; spec-review owns that.
             - Do not modify tracked files or rerun broad commands. Use the existing evidence unless a narrow read-only inspection is needed.
@@ -82,14 +85,33 @@ jobs:
             ## Why
             Short rationale.
 
+            ## Quality rubric
+            | Category | Score / 5 | Notes |
+            |---|---:|---|
+            | Behavioral relevance |  |  |
+            | Assertion strength |  |  |
+            | Failure sensitivity |  |  |
+            | Test oracle quality |  |  |
+            | Important cases covered |  |  |
+            | Isolation and determinism |  |  |
+
+            ## Mental mutations
+            Plausible broken implementations considered, and whether the tests would fail.
+
             ## Valuable tests
             Which tests provide real confidence and why.
 
             ## Weak or shallow tests
             Which tests may be low-value or coverage-gaming.
 
+            ## Red flags
+            Specific red flags found, or None.
+
             ## Missed edge cases
             Concrete missing edge/failure/regression cases.
+
+            ## Suggested PR comments
+            Concrete actionable comments, or None.
 
             ## Spec-review signal
             One paragraph explaining how this checkbox should influence SHIP vs NEEDS_WORK." \
