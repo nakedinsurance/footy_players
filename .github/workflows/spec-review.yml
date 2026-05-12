@@ -1,0 +1,240 @@
+name: Spec Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  spec-review:
+    name: Review PR against PRD.md
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Cursor CLI
+        run: |
+          # Install Cursor Agent CLI — requires CURSOR_API_KEY secret in repo settings.
+          # Docs: https://cursor.com/docs/cli/installation · https://cursor.com/docs/cli/github-actions
+          curl https://cursor.com/install -fsS | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          command -v agent
+          agent --version
+
+      - name: Install project dependencies
+        run: npm ci
+
+      - name: Install optional skill tool dependencies
+        run: |
+          if [ -f .cursor/skills/test-confidence-review/package.json ]; then
+            npm install --prefix .cursor/skills/test-confidence-review --no-package-lock
+          fi
+
+          if [ -f .cursor/skills/test-confidence-review/requirements.txt ]; then
+            python -m pip install --upgrade pip
+            python -m pip install -r .cursor/skills/test-confidence-review/requirements.txt
+          fi
+
+      - name: Run test-confidence evidence
+        run: |
+          # CI mode: produce both the human markdown report and the JSON contract consumed by spec-review.
+          npm run test-confidence:ci -- \
+            --base origin/${{ github.base_ref }} \
+            --spec PRD.md
+
+      - name: Run test-confidence skill
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          agent -p --trust --mode ask --output-format text \
+            "Follow the test-confidence-review skill at .cursor/skills/test-confidence-review/SKILL.md.
+
+            Inputs:
+            --spec PRD.md
+            --base origin/${{ github.base_ref }}
+
+            Existing evidence files:
+            - test-confidence-result.json
+            - test-confidence-result.md
+            - coverage/ if present
+
+            Task:
+            - Read the existing evidence files, changed source, and related tests.
+            - Statically and intelligently assess whether the tests are valuable, meaningful, and tied to changed behavior.
+            - Apply the qualitative rubric from the skill: behavioral relevance, assertion strength, failure sensitivity, test oracle quality, important cases covered, and isolation/determinism.
+            - Use mental mutation thinking: try at least three plausible broken implementations in your reasoning and decide whether the tests would fail.
+            - Explicitly call out tests that look shallow, implementation-mirroring, coverage-gaming, or added only for the sake of metrics.
+            - Explicitly call out red flags: no-throw-only assertions, implementation-duplicating expectations, unexplained snapshots, mock-call-only tests, requirement-mismatched tests, brittle internals coupling, uncontrolled time/network/random/global state, or test names that overclaim.
+            - Explicitly call out meaningful edge cases, failure paths, boundary cases, and regression risks that appear untested.
+            - Do not judge whether the implementation satisfies the PRD; spec-review owns that.
+            - Do not modify tracked files or rerun broad commands. Use the existing evidence unless a narrow read-only inspection is needed.
+
+            Output a concise markdown report with these sections:
+            ## Test-confidence checkbox
+            Pass | Fail
+
+            ## Why
+            Short rationale.
+
+            ## Quality rubric
+            | Category | Score / 5 | Notes |
+            |---|---:|---|
+            | Behavioral relevance |  |  |
+            | Assertion strength |  |  |
+            | Failure sensitivity |  |  |
+            | Test oracle quality |  |  |
+            | Important cases covered |  |  |
+            | Isolation and determinism |  |  |
+
+            ## Mental mutations
+            Plausible broken implementations considered, and whether the tests would fail.
+
+            ## Valuable tests
+            Which tests provide real confidence and why.
+
+            ## Weak or shallow tests
+            Which tests may be low-value or coverage-gaming.
+
+            ## Red flags
+            Specific red flags found, or None.
+
+            ## Missed edge cases
+            Concrete missing edge/failure/regression cases.
+
+            ## Suggested PR comments
+            Concrete actionable comments, or None.
+
+            ## Spec-review signal
+            One paragraph explaining how this checkbox should influence SHIP vs NEEDS_WORK." \
+            > test-confidence-agent-review.md 2>&1
+
+      - name: Upload review evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: review-evidence
+          path: |
+            test-confidence-result.md
+            test-confidence-result.json
+            test-confidence-agent-review.md
+            coverage/**
+
+      - name: Run spec-review skill
+        id: review
+        env:
+          CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          # The CLI binary is `agent` (not `cursor`). There is no `agent run --skill`; pass skill args in the prompt.
+          agent -p --trust --mode ask --output-format text \
+            "Follow the spec-review skill at .cursor/skills/spec-review.md exactly.
+
+            --spec PRD.md
+            --branch ${{ github.head_ref }}
+            --base ${{ github.base_ref }}
+            --test-confidence test-confidence-result.json
+            --test-confidence-review test-confidence-agent-review.md
+            --output both
+
+            Test confidence evidence:
+            - Read test-confidence-result.json and test-confidence-result.md before producing the final verdict.
+            - Read test-confidence-agent-review.md as the qualitative test-confidence checkbox review.
+            - Treat test-confidence-result.json as the authoritative input for one validation checkbox in the overall PR review.
+            - Treat test-confidence-agent-review.md as the authoritative qualitative assessment of whether the tests are valuable or shallow.
+            - If test-confidence-result.json has passed=false, required_checks_passed=false, or the agent review checkbox is Fail, mark the test-confidence checkbox failed and use it as a confidence signal when choosing SHIP vs NEEDS_WORK.
+            - Do not create a separate blocker solely because the test-confidence checkbox failed.
+            - Do not recalculate coverage or test pass/fail yourself; reference the test-confidence artifact instead.
+            - Do not add a Validation Evidence section, validation JSON field, or extra markdown section for test confidence. Fold any important test-confidence concern into the existing Quality Signals, Risk Signals, Intent Alignment, or Summary sections only.
+
+            CI constraints: read the repo and run non-destructive git commands only; do not modify tracked files.
+            Output: emit only the JSON verdict contract object FIRST (single JSON with verdict and exit_code), then the human report per the skill. Do not wrap the full output in markdown code fences and do not add introductory prose." \
+            > review-output.txt 2>&1
+
+          # Extract exit code from JSON contract (exit_code: 0=SHIP, 1=NEEDS_WORK, 2=BLOCKED)
+          EXIT_CODE=$(grep -o '"exit_code":[[:space:]]*[0-9]' review-output.txt | grep -o '[0-9]$' || echo "1")
+          VERDICT=$(grep -o '"verdict":[[:space:]]*"[^"]*"' review-output.txt | head -1 | grep -o '"[^"]*"$' | tr -d '"' || echo "UNKNOWN")
+
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+          echo "verdict=$VERDICT"     >> "$GITHUB_OUTPUT"
+
+          # Don't fail the step here — we post the comment first, then set exit code
+          exit 0
+
+      - name: Post review comment on PR
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs   = require('fs');
+            const raw  = fs.readFileSync('review-output.txt', 'utf8');
+            const verdict = '${{ steps.review.outputs.verdict }}';
+
+            function stripAnsi(value) {
+              return value.replace(/\u001b\[[0-9;]*m/g, '');
+            }
+
+            function extractHumanReport(value) {
+              const clean = stripAnsi(value).trim();
+              const borderReport = clean.match(/(?:^|\n)([━-]{10,}\nSPEC REVIEW[\s\S]*)/);
+              if (borderReport) {
+                return borderReport[1].trim();
+              }
+
+              const alignmentReport = clean.match(/(?:^|\n)(## Spec Alignment[\s\S]*)/);
+              if (alignmentReport) {
+                return alignmentReport[1].trim();
+              }
+
+              return clean;
+            }
+
+            function removeStandaloneFences(value) {
+              return value
+                .split('\n')
+                .filter((line) => !line.trim().match(/^```[a-zA-Z0-9_-]*$/))
+                .join('\n')
+                .trim();
+            }
+
+            const report = removeStandaloneFences(extractHumanReport(raw));
+
+            const icon = verdict === 'SHIP'       ? '✅'
+                       : verdict === 'NEEDS_WORK' ? '⚠️'
+                       : verdict === 'BLOCKED'    ? '🚫'
+                       : 'ℹ️';
+
+            const body = [
+              `## ${icon} Spec Review — \`${verdict}\``,
+              '',
+              '<details>',
+              '<summary>Full report</summary>',
+              '',
+              report,
+              '',
+              '</details>',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner:        context.repo.owner,
+              repo:         context.repo.repo,
+              body,
+            });
+
+      - name: Enforce gate
+        # Fail the job if verdict is BLOCKED (exit_code 2).
+        # NEEDS_WORK (exit_code 1) posts a warning but does not block merge —
+        # change the condition to `!= '0'` to also block on NEEDS_WORK.
+        if: steps.review.outputs.exit_code == '2'
+        run: |
+          echo "Spec review returned BLOCKED. Fix the pre-merge blockers before merging."
+          exit 2
