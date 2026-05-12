@@ -131,9 +131,10 @@ jobs:
             - If test-confidence-result.json has passed=false, required_checks_passed=false, or the agent review checkbox is Fail, mark the test-confidence checkbox failed and use it as a confidence signal when choosing SHIP vs NEEDS_WORK.
             - Do not create a separate blocker solely because the test-confidence checkbox failed.
             - Do not recalculate coverage or test pass/fail yourself; reference the test-confidence artifact instead.
+            - Do not add a Validation Evidence section, validation JSON field, or extra markdown section for test confidence. Fold any important test-confidence concern into the existing Quality Signals, Risk Signals, Intent Alignment, or Summary sections only.
 
             CI constraints: read the repo and run non-destructive git commands only; do not modify tracked files.
-            Output: emit the JSON verdict contract object FIRST (single JSON with verdict and exit_code), then the human report per the skill." \
+            Output: emit only the JSON verdict contract object FIRST (single JSON with verdict and exit_code), then the human report per the skill. Do not wrap the full output in markdown code fences and do not add introductory prose." \
             > review-output.txt 2>&1
 
           # Extract exit code from JSON contract (exit_code: 0=SHIP, 1=NEEDS_WORK, 2=BLOCKED)
@@ -155,6 +156,35 @@ jobs:
             const raw  = fs.readFileSync('review-output.txt', 'utf8');
             const verdict = '${{ steps.review.outputs.verdict }}';
 
+            function stripAnsi(value) {
+              return value.replace(/\u001b\[[0-9;]*m/g, '');
+            }
+
+            function extractHumanReport(value) {
+              const clean = stripAnsi(value).trim();
+              const borderReport = clean.match(/(?:^|\n)([━-]{10,}\nSPEC REVIEW[\s\S]*)/);
+              if (borderReport) {
+                return borderReport[1].trim();
+              }
+
+              const alignmentReport = clean.match(/(?:^|\n)(## Spec Alignment[\s\S]*)/);
+              if (alignmentReport) {
+                return alignmentReport[1].trim();
+              }
+
+              return clean;
+            }
+
+            function removeStandaloneFences(value) {
+              return value
+                .split('\n')
+                .filter((line) => !line.trim().match(/^```[a-zA-Z0-9_-]*$/))
+                .join('\n')
+                .trim();
+            }
+
+            const report = removeStandaloneFences(extractHumanReport(raw));
+
             const icon = verdict === 'SHIP'       ? '✅'
                        : verdict === 'NEEDS_WORK' ? '⚠️'
                        : verdict === 'BLOCKED'    ? '🚫'
@@ -166,9 +196,7 @@ jobs:
               '<details>',
               '<summary>Full report</summary>',
               '',
-              '```',
-              raw.trim(),
-              '```',
+              report,
               '',
               '</details>',
             ].join('\n');
